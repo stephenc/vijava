@@ -30,8 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 package com.vmware.vim25.ws;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import org.doublecloud.ws.util.IoUtil;
+
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -49,6 +49,9 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -70,6 +73,10 @@ final public class WSClient
   private final static String SOAP_ACTION_V50 = "urn:vim25/5.0";
   private final static String SOAP_ACTION_V51 = "urn:vim25/5.1";
   private final static String SOAP_ACTION_V55 = "urn:vim25/5.5";
+
+  private static final AtomicInteger REQUEST_ID = new AtomicInteger();
+
+  private final Logger logger = Logger.getLogger(getClass().getName());
 
   private URL baseUrl = null;
   private String cookie = null;
@@ -148,6 +155,8 @@ final public class WSClient
 
   public InputStream post(String soapMsg) throws IOException
   {
+    int requestId = REQUEST_ID.incrementAndGet();
+
     HttpURLConnection postCon = (HttpURLConnection) baseUrl.openConnection();
 
     if(connectTimeout > 0)
@@ -177,6 +186,14 @@ final public class WSClient
     OutputStream os = postCon.getOutputStream();
     OutputStreamWriter out = new OutputStreamWriter(os, "UTF8");
 
+    if (logger.isLoggable(Level.FINER)) {
+      logger.log(Level.FINE, "### REQUEST #" + requestId + "\n"
+              + baseUrl + "\n"
+              + SOAP_ACTION_HEADER + ":" + soapAction + "\n"
+              + soapMsg);
+    } else if (logger.isLoggable(Level.FINE)) {
+      logger.log(Level.FINE, "Request #" + requestId + " - url=" + baseUrl + ", " + SOAP_ACTION_HEADER + ": " + soapAction);
+    }
     out.write(soapMsg);
     out.close();
 
@@ -191,6 +208,16 @@ final public class WSClient
       is = postCon.getErrorStream();
     }
 
+    if (logger.isLoggable(Level.FINER)) {
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      IoUtil.copy(is, baos);
+      logger.log(Level.FINE, "### RESPONSE #" + requestId + "\n"
+              + postCon.getResponseCode() + " " + postCon.getResponseMessage() + "\n"
+              + baos.toString());
+      is = new ByteArrayInputStream(baos.toByteArray());
+    } else if (logger.isLoggable(Level.FINE)) {
+      logger.log(Level.FINE, "Response #" + requestId + " - " + postCon.getResponseCode() + " " + postCon.getResponseMessage());
+    }
     if(cookie==null)
     {
       cookie = postCon.getHeaderField("Set-Cookie");
